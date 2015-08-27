@@ -1,0 +1,206 @@
+<?php
+
+/**
+ * @file
+ * All functionality of  module.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function dbbackup_menu() {
+  $menu['admin/utlities'] = array(
+    'title' => 'Utlities',
+    'access arguments' => array('access administration pages'),
+    'access callback' => TRUE,
+  );
+  $menu['admin/utlities/dbbackup'] = array(
+    'title' => 'Database Export',
+    'page callback' => 'dbbackup_manage_item_page',
+    'access callback' => TRUE,
+  );
+  $menu['admin/utlities/history'] = array(
+    'title' => 'Database Export History',
+    'page callback' => 'dbbackup_manage_history_item_page',
+    'access callback' => TRUE,
+  );
+  return $menu;
+}
+/**
+ * Bbbackup menu calling the dbbackup_form.
+ */
+function dbbackup_manage_item_page() {
+  return drupal_get_form('dbbackup_form');
+}
+/**
+ * Bbbackup dbbackup_form.
+ */
+function dbbackup_form($form, &$form_state) {
+  $form['export_option'] = array(
+    '#type' => 'radios',
+    '#title' => 'Select Export Option',
+    '#id' => 'radio_export_option',
+    '#required' => TRUE,
+    '#options' => array(
+      'Export Database',
+      'Export specific tables',
+    ),
+  );
+
+  $form['table'] = array(
+    '#title' => 'Select tables',
+    '#type' => 'select',
+    '#multiple' => TRUE,
+    '#size' => 10,
+    '#options' => get_tables(),
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Submit',
+  );
+  $form['#attached']['js'] = array(
+    drupal_get_path('module', 'dbbackup') . '/custom.js',
+  );
+  return $form;
+}
+/**
+ * Bbbackup dbbackup_form_submit handler.
+ */
+function dbbackup_form_submit($form, &$form_state) {
+  $directory = 'sites/default/files/dbbackup/';
+  global $databases,$user;
+
+  if (!file_exists($directory)) {
+    mkdir($directory, 0777, TRUE);
+  }
+  $result = db_query("SHOW VARIABLES LIKE 'basedir'");
+
+  foreach ($result as $record) {
+    $db_path = $record->Value;
+  }
+
+  foreach ($databases['default'] as $row) {
+    $database = $row['database'];
+    $user_name  = $row['username'];
+    $password = $row['password'];
+  }
+
+  $file_name = 'Dbbackup-' . time();
+  if ($form_state['values']['export_option'] == 1) {
+    if (isset($form_state['values']['table']) && !empty($form_state['values']['table'])) {
+      $_name = $form_state['values']['table'];
+      $tk = '';
+      foreach ($_name as $_names) {
+        $tk .= $_names . ' ';
+      }
+      $command = $db_path . '/bin/mysqldump -u ' . $user_name . ' -p' . $password . ' ' . $database . ' ' . $tk . ' > ' .   $directory . $file_name . '.sql';
+      exec($command);
+      $dbbackup_query = db_insert('dbbackup')
+                        ->fields(array(
+                          'backup_type' => 'Specific Table',
+                          'path' => $file_name . '.sql',
+                          'user_id' => $user->uid,
+                          'added_date' => time(),
+                          )
+                        )
+      ->execute();
+      drupal_goto('admin/utlities/history');
+      drupal_set_message('Selected tables exported successfully from database');
+    }
+    else {
+      drupal_set_message(t('An error occurred and processing did not complete.'), 'error');
+      drupal_set_message(t('Please select table to export.'), 'error');
+    }
+  }
+  elseif ($form_state['values']['export_option'] == 0) {
+    $command = $db_path . '/bin/mysqldump -u ' . $user_name . ' -p' . $password . ' ' . $database . ' > ' . $directory .  $file_name . '.sql';
+    exec($command);
+    $dbbackup_query = db_insert('dbbackup')
+        ->fields(array(
+          'backup_type' => 'Sql Dump',
+          'path' => $file_name . '.sql',
+          'user_id' => $user->uid,
+          'added_date' => time(),
+    ))
+    ->execute();
+    drupal_goto('admin/utlities/history');
+    drupal_set_message('Database Exported Successfully');
+  }
+  else {
+    drupal_set_message(t('An error occurred and processing did not complete.'), 'error');
+  }
+}
+/**
+ * Bbbackup get_tables() function.
+ */
+function get_tables() {
+  $table = 'sites';
+  $sql = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = '$table'";
+  $results = db_query($sql);
+  foreach ($results as $row) {
+    $send[$row->TABLE_NAME] = $row->TABLE_NAME;
+  }
+  return $send;
+}
+/**
+ * Bbbackup dbbackup_manage_history_item_page() function.
+ */
+function dbbackup_manage_history_item_page() {
+  $directory = 'sites/default/files/dbbackup/';
+  $header = array(
+    array(
+      'data' => t('S.no'),
+      'field' => 'id',
+      'sort' => 'Desc',
+    ),
+    array(
+      'data' => t('Type of Export'),
+      'field' => 'backup_type',
+      'sort' => 'ASC',
+    ),
+    array('data' => t('Added Date')),
+    array('data' => t('Action')),
+  );
+
+  $query = db_select('dbbackup', 'u');
+  $query->fields('u',
+            array(
+              'id',
+              ' backup_type ',
+              ' path ',
+              ' user_id ',
+              ' added_date ',
+            )
+       );
+  $table_sort = $query->extend('TableSort')->orderByHeader($header);
+
+  $pager = $table_sort->extend('PagerDefault')->limit(10);
+
+  $result = $pager->execute();
+  $rows = array();
+  foreach ($result as $res) {
+    $path = l(t('File'), $directory . $res->path);
+    $rows[] = array($res->id, $res->backup_type, date('d-m-Y',
+              $res->added_date), $path);
+
+  }
+  $output = '';
+  if (!empty($rows)) {
+    $output = theme('table',
+                    array(
+                      'header' => $header,
+                      'rows' => $rows,
+                      'attributes' => array(
+                        'banner_id' => 'sort-table',
+                      ),
+                    )
+                    );
+    $output .= theme('pager');
+  }
+  else {
+    $output .= t("No results found.");
+  }
+
+  return $output;
+}

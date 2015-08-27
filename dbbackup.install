@@ -1,0 +1,56 @@
+<?php
+
+/**
+ * @file
+ * All functionality of Dbbackup module
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function dbbackup_schema() {
+  $schema = array();
+  $schema['dbbackup'] = array(
+    'description' => 'dbbackup module table',
+    'fields' => array(
+      'id' => array(
+        'description' => 'The unique Row ID',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'backup_type' => array(
+        'type' => 'text',
+      ),
+      'path' => array(
+        'type' => 'text',
+      ),
+      'user_id' => array(
+        'type' => 'text',
+      ),
+      'added_date' => array(
+        'type' => 'text',
+      ),
+    ),
+    'primary key' => array('id'),
+  );
+  return $schema;
+}
+/**
+ * Hook_enable().
+ */
+function dbbackup_enable() {
+  // Check if table exists, if not install the schema.
+  if (db_table_exists('dbbackup') == FALSE) {
+    drupal_install_schema('dbbackup');
+  }
+}
+/**
+ * Hook_disable().
+ */
+function dbbackup_disable() {
+  // Check if table exists, if not install the schema.
+  if (db_table_exists('dbbackup') == FALSE) {
+    drupal_uninstall_schema('dbbackup');
+  }
+}

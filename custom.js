@@ -1,0 +1,9 @@
+jQuery(document).ready(function(){
+jQuery('.form-item-table').hide();
+     jQuery('#edit-export-option-0').click(function(){
+        jQuery('.form-item-table').hide();
+    });  
+    jQuery('#edit-export-option-1').click(function(){
+        jQuery('.form-item-table').show();
+    });
+}); 
